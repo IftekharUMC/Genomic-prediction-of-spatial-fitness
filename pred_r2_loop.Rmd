@@ -1,0 +1,44 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(readr)
+temp = list.files(pattern="*.csv")
+#action to move 
+for (i in 1:length(temp)) 
+{
+assign(temp[i], read.csv(temp[i]))
+#build and examine linear model
+#colvar<-c("y","x")
+x = read.csv(temp[i])$x
+y = read.csv(temp[i])$y
+fit<-lm(formula = y~x)
+
+y_yihat = fit$residuals
+
+inf = lm.influence(fit)
+
+one_hat = 1 - inf$hat
+
+
+PRESS = sum ( y_yihat ^ 2 / one_hat ^ 2)
+# PRESS
+anova_ss = anova(fit)
+
+
+tot_ss = anova_ss$`Sum Sq`[1] + anova_ss$`Sum Sq`[2]
+tot_ss
+
+PRE_R2 = 1 - (PRESS/tot_ss) 
+
+PRE_R2
+#save the file
+result = paste(temp[i], PRE_R2, sep = " ,   ")
+#save output of each document
+write(result, file = "myfile.txt", append = TRUE, sep = "\n")
+}
+
+
+```
