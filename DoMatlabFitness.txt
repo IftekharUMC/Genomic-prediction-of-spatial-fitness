@@ -1,0 +1,79 @@
+#!/bin/bash
+##########
+# run Dr. Yixins Matlab script 
+# tr -d '\15\32' < windowsfile.txt > unixfile.txt or
+# tr -d '\r' < windowsfile.txt > unixfile.txt
+# add sample id by running DoAddSampleID.sh, then catenate, and grep -v 'col1' (to exclude header)
+# arrange text file in a way so that ID is in the first column and then col1, row1, r1, v1,col2, row2, r2, v2, bcol, brow, br and save as a csv file
+# RAD= radius, BR= brightness, BC= big circle, VARL= distance between centers of Tester and GFP colony, VARL_BIG= distance between centers of Tester colony and bic circle, s = fitness, RR= radius ratio
+
+
+##########
+
+awk -F ',' '{ print > ("file-" $1 ); close("file-" $1 ) }' ReadyForFitnessCal.csv
+
+DoSpatialFitness(){
+
+for FILE in $(ls file-*)
+do
+RAD_TESTER=$(cat $FILE | cut -d "," -f 8)
+RAD_GFP=$(cat $FILE | cut -d "," -f 4)
+RAD_BIG=$(cat $FILE | cut -d "," -f 12)
+BR_GFP=$(cat $FILE | cut -d "," -f 5)
+BR_TESTER=$(cat $FILE | cut -d "," -f 9)
+
+RESULT_RR=$(echo "scale=8; $RAD_TESTER/$RAD_GFP" | bc)
+if [[ $BR_GFP -lt $BR_TESTER ]]; then
+RESULT_RR=$(echo "scale=8; $RAD_GFP/$RAD_TESTER" | bc)
+fi
+
+TESTER_Y=$(cat $FILE | cut -d "," -f 7)
+TESTER_X=$(cat $FILE | cut -d "," -f 6)
+GFP_Y=$(cat $FILE | cut -d "," -f 3)
+GFP_X=$(cat $FILE | cut -d "," -f 2)
+BC_Y=$(cat $FILE | cut -d "," -f 11)
+BC_X=$(cat $FILE | cut -d "," -f 10)
+
+VARL=$(echo "scale=8; sqrt((($GFP_X - $TESTER_X)^2)+(($GFP_Y - $TESTER_Y)^2))" | bc)
+
+VARL_BIG=$(echo "scale=8; sqrt((($BC_X - $TESTER_X)^2)+(($BC_Y - $TESTER_Y)^2))" | bc)
+if [[ $BR_GFP -lt $BR_TESTER ]]; then
+VARL_BIG=$(echo "scale=8; sqrt((($BC_X - $GFP_X)^2)+(($BC_Y - $GFP_Y)^2))" | bc)
+fi
+
+RESULT_S=$(echo "scale=8; (sqrt($VARL^2+4*$RAD_BIG^2)+$VARL-2*$RAD_BIG)/(2*$RAD_BIG)" | bc)
+if [[ $RESULT_RR < 1 ]]; then
+RESULT_S=$(echo "scale=8; (1/(1+$RESULT_S))-1" | bc)
+fi
+
+OverlapX=$(echo "scale=8; ($VARL_BIG^2+$RAD_TESTER^2-$RAD_BIG^2)/(2*$VARL_BIG*$RAD_TESTER)" | bc)
+OverlapY=$(echo "scale=8; a(sqrt((1/($OverlapX^2))-1))" | bc -l)
+OverlapA=$(echo "scale=8; $RAD_TESTER^2*$OverlapY" |bc)
+
+OverlapM=$(echo "scale=8; ($VARL_BIG^2+$RAD_BIG^2-$RAD_TESTER^2)/(2*$VARL_BIG*$RAD_BIG)" | bc)
+OverlapN=$(echo "scale=8; a(sqrt((1/($OverlapM^2))-1))" | bc -l)
+OverlapB=$(echo "scale=8; $RAD_BIG^2*$OverlapN" |bc)
+
+OverlapZ=$(echo "scale=8; sqrt((-$VARL_BIG+$RAD_TESTER+$RAD_BIG)*($VARL_BIG+$RAD_TESTER-$RAD_BIG)*($VARL_BIG-$RAD_TESTER+$RAD_BIG)*($VARL_BIG+$RAD_TESTER+$RAD_BIG))" | bc)
+OverlapC=$(echo "scale=8; (1/2)*$OverlapZ" | bc)
+
+Overlap=$(echo "scale=8; $OverlapA+$OverlapB-$OverlapC" | bc)
+Area_Tester=$(echo "scale=8; 3.14159265*$RAD_TESTER^2" | bc)
+Overlap_percentage=$(echo "scale=8; $Overlap/$Area_Tester" | bc)
+
+
+if (( $(bc <<< "$Overlap_percentage>=0.10 && $Overlap_percentage<=0.35") )); then
+sizable_overlap=$(echo "Yes")
+else
+sizable_overlap=$(echo "No")
+fi
+
+echo $FILE $RESULT_RR $RESULT_S $OverlapA $OverlapB $OverlapC $Overlap $Area_Tester $Overlap_percentage $sizable_overlap
+
+done >> outfile1.txt
+
+}
+
+DoSpatialFitness
+
+#done

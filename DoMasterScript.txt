@@ -1,0 +1,163 @@
+#!/bin/bash
+# go to the current working directory and run this script from there
+# copy DoMatlabFitness.txt, DoSD1.sh, DoSD2.sh, CalGenomeScore.sh, Correlation.awk and Vlookup.awk to current working directory
+# make a folder of matlab_textfile in the current working directory and move all matlab txt files in this folder
+# make a folder of gemma in the current working directory and move genfile.csv, snpfile.csv and gemma.macosx txt files in this folder
+
+##########
+cd matlab_textfile
+mkdir newfile
+
+#add sample ID
+
+DoAddSampleID(){
+
+for FILE in $(ls *.tif.txt)
+do
+
+paste $FILE <(yes $FILE | head -n $(cat $FILE | wc -l)) > newfile/$FILE.new
+
+done 
+
+}
+
+DoAddSampleID
+
+#catenate all new text files
+cd newfile
+cat *.tif.txt.new > all.txt
+
+# grep only data point
+grep -v 'col1' <all.txt > listAll.txt
+
+# translate windows file to unix file
+tr -d '\r' < listAll.txt > listAll_unix.txt
+
+# prepare file for fitness calculation
+cat listAll_unix.txt | tr -s '[:blank:]' ',' > listAll.csv
+
+# prepare fitness calculation file, insert line number
+awk -F ',' '{ print NR,$13,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}' OFS=',' <listAll.csv > FitnessCal.csv
+
+cat FitnessCal.csv| cut -d ',' -f2| cut -d '_' -f1| cut -d '-' -f2 > FitnessCal1.csv
+paste -d ',' FitnessCal1.csv FitnessCal.csv >FitnessCal2.csv
+awk -F ',' '{ print $2,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14}' OFS=',' <FitnessCal2.csv > ReadyForFitnessCal.csv
+
+# calculate fitness
+mkdir FitnessCalculator
+cp ../../DoMatlabFitness.txt FitnessCalculator/
+cp ReadyForFitnessCal.csv FitnessCalculator/
+cd FitnessCalculator
+./DoMatlabFitness.txt
+mv outfile1.txt ../../../
+cd ../
+cp FitnessCal2.csv ../../
+cd ../../
+mkdir DataCleaning
+mv FitnessCal2.csv DataCleaning/
+cat outfile1.txt | tr -s '[:blank:]' ',' > outfile1.csv
+
+# prepare file for data cleaning
+cp outfile1.csv DataCleaning/
+cd DataCleaning
+cat outfile1.csv| cut -d ',' -f1| cut -d '-' -f2 > out2.csv
+paste -d ',' out2.csv Outfile1.csv > Outfile2.csv
+awk -F ',' '{ print $1,$3,$4,$5,$6,$7,$8,$9,$10,$11}' OFS=',' <Outfile2.csv > GetReadyForSD.csv
+sort -n -t$',' -k 1,1 <GetReadyForSD.csv >GettingReadyForSD.csv # n=numeric, t=delimiter, k=field, only
+cat FitnessCal2.csv| cut -d ',' -f1 > id.csv
+paste -d ',' id.csv GettingReadyForSD.csv > AlmostReadyForSD.csv
+#grep 'Yes' < AlmostReadyForSD.csv > CentReadyForSD.csv
+cat AlmostReadyForSD.csv| cut -d ',' -f1,4 > ReadyForSD.csv #take all data points
+mkdir SD1
+cp ../DoSD1.sh SD1/
+cp ReadyForSD.csv SD1/
+cd SD1
+./DoSD1.sh
+cat SD1 | tr -s '[:blank:]' ',' > SD1.csv
+cat SD1.csv| cut -d ',' -f1| cut -d '_' -f2 > id2.csv
+paste -d ',' id2.csv SD1.csv > GetReadyForSD2.csv
+awk -F ',' '{ print $1,$3,$4,$5,$6,$7}' OFS=',' <GetReadyForSD2.csv > ReadyForSD2.csv
+
+# vlook up values of ReadyForSD.csv from ReadyForSD2.csv
+cp ../../Vlookup.awk . # . = dot indicates copy current directory
+awk -F "," -f Vlookup.awk ReadyForSD2.csv ReadyForSD.csv >VlookedUp.csv
+paste -d ',' VlookedUp.csv ReadyForSD.csv > PreparingForSD2.csv
+awk -F ',' '{ print $1,$5,$2,$3}' OFS=',' <PreparingForSD2.csv > FinallyReadyForSD2.csv
+awk -F "," '($3 > $2) && ($4 < $2 ) ' FinallyReadyForSD2.csv > cleaned1.csv
+cat cleaned1.csv| cut -d ',' -f1-2 > Cal_SD2.csv
+
+# Do after cleaning SD
+
+mkdir ../SD2
+cp Cal_SD2.csv ../SD2/
+cp ../../DoSD2.sh ../SD2/
+cd ../SD2
+./DoSD2.sh
+cat SD2 | tr -s '[:blank:]' ',' > SD2.csv
+
+# prepare pheno.csv file for gemma
+cat SD2.csv| cut -d ',' -f1| cut -d '_' -f2 > Ph1.csv
+paste -d ',' Ph1.csv SD2.csv > Ph2.csv
+awk -F ',' '{ print $1,$3,$4,$5,$6,$7}' OFS=',' <Ph2.csv > Ph3.csv
+sort -n -t$',' -k 1,1 <Ph3.csv >SortedPh3.csv # n=numeric, t=delimiter, k=field, only
+cat SortedPh3.csv| cut -d ',' -f3 > pheno.csv
+
+# run gemma
+cp pheno.csv ../../gemma/pheno.csv
+cd ../../gemma/
+./gemma.macosx -g CC5I_genfile.csv -p pheno.csv -a CC5I_snpfile.csv -o CC5I_relatedness1.txt -gk 1 -maf 0
+mv output/CC5I_relatedness1.txt.cXX.txt CC5I_relatedness1.txt
+./gemma.macosx -g CC5I_genfile.csv -p pheno.csv -a CC5I_snpfile.csv -k CC5I_relatedness1.txt -o output1 -lmm 4 -n 1 -maf 0 
+
+# do p-thresholding genome scoring
+cd output/
+cat output1.assoc.txt| tr -s '[:blank:]' ',' > output1.assoc.csv
+cat output1.assoc.csv| grep -v 'chr' > output2.assoc.csv
+paste -d ',' output2.assoc.csv ../CC5I_genfile.csv > preGS1.csv
+awk -F ',' '{ print $2,$8,$14,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48}' OFS=',' <preGS1.csv > preGS2.csv
+
+mkdir p-threshold
+cp preGS2.csv p-threshold/
+cp ../../CalGenomeScore.sh p-threshold/CalGenomeScore.sh
+cd p-threshold
+mv preGS2.csv p1.0.csv
+awk -F "," '$3 < 0.9' <p1.0.csv > p0.9.csv
+awk -F "," '$3 < 0.8' <p1.0.csv > p0.8.csv
+awk -F "," '$3 < 0.7' <p1.0.csv > p0.7.csv
+awk -F "," '$3 < 0.6' <p1.0.csv > p0.6.csv
+awk -F "," '$3 < 0.5' <p1.0.csv > p0.5.csv
+awk -F "," '$3 < 0.4' <p1.0.csv > p0.4.csv
+awk -F "," '$3 < 0.3' <p1.0.csv > p0.3.csv
+awk -F "," '$3 < 0.2' <p1.0.csv > p0.2.csv
+awk -F "," '$3 < 0.1' <p1.0.csv > p0.1.csv
+
+./CalGenomeScore.sh
+
+DoGS3(){
+for FILE in $(ls final_out_* | cut -d '_' -f3)
+do
+tr ',' '\n' < final_out_${FILE} > finalGS_${FILE}
+paste -d ',' ../../pheno.csv finalGS_${FILE} > correlation_${FILE}
+COUNTER=$((COUNTER+=1))
+echo $COUNTER
+done
+}
+DoGS3
+
+
+# do regression
+cp ../../../Correlation.awk . # dot indicates copy into current directory
+DoRegression(){
+for FILE in $(ls correlation_* | cut -d '_' -f2)
+do
+awk -F "," -f Correlation.awk correlation_${FILE} > Regression_${FILE}
+cat Regression_* > p-threshold_reg.txt
+done 
+}
+DoRegression
+
+
+
+cp p-threshold_reg.txt ../../../p-threshold_reg.txt
+
+
